@@ -39,12 +39,14 @@
             text-align: center;
         }
         
-        .a-canvas {
-            width: 100% !important;
-            height: 100% !important;
+        a-scene canvas {
+            width: 100vw !important;
+            height: 100vh !important;
             top: 0 !important;
             left: 0 !important;
-            position: absolute !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            position: fixed !important;
         }
         
         /* Hide cursor on mobile devices */
@@ -60,11 +62,15 @@
 
     <a-scene
         embedded
-        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3; sourceWidth: 1280; sourceHeight: 960; displayWidth: 1280; displayHeight: 960;"
         vr-mode-ui="enabled: false"
         renderer="logarithmicDepthBuffer: true; precision: medium; antialias: true;"
-        device-orientation-permission-ui="enabled: false"
-        style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;">
+        device-orientation-permission-ui="enabled: false">
+        
+        <a-assets>
+            <!-- Sound effects -->
+            <audio id="select-sound" src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBjGJ0fPTgjMGHm7A7+OZUQ8MUKXi8bllHAU7k9n0yXkpBSJ0xO/glUIKE1yx6OyrWBQJQ5zd87tsIQYuhM/z1YU1Bhpqvu7mnVIPDF..." crossorigin="anonymous"></audio>
+        </a-assets>
         
         <a-marker preset="hiro" id="marker">
             <!-- Main dungeon container -->
@@ -81,7 +87,7 @@
 
         <a-entity camera look-controls="enabled: false">
             <!-- Cursor for desktop - hidden on mobile via CSS -->
-            <a-cursor raycaster="objects: .tile" fuse="false"></a-cursor>
+            <a-cursor raycaster="objects: .tile, .game-piece" fuse="false"></a-cursor>
         </a-entity>
     </a-scene>
 
@@ -97,6 +103,146 @@
         const ROWS = ['A','B','C','D','E','F','G','H'];
         let selectedTile = null;
         let isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        let draggedPiece = null;
+        let gamePieces = [];
+
+        // Particle effects for each terrain type
+        const PARTICLE_EFFECTS = {
+            grass: { color: '#66BB6A', size: 0.01, count: 15 },
+            stone: { color: '#9E9E9E', size: 0.012, count: 10 },
+            water: { color: '#42A5F5', size: 0.015, count: 20 },
+            dirt: { color: '#A1887F', size: 0.01, count: 12 },
+            mountain: { color: '#78909C', size: 0.02, count: 8 }
+        };
+
+        // Play selection sound
+        function playSelectSound() {
+            const audio = new Audio();
+            // Simple beep sound using Web Audio API
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 800;
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+        }
+
+        // Create particle effect on tile
+        function createParticleEffect(tile, terrainType) {
+            const effect = PARTICLE_EFFECTS[terrainType];
+            if (!effect) return;
+            
+            const position = tile.getAttribute('position');
+            
+            for (let i = 0; i < effect.count; i++) {
+                const particle = document.createElement('a-sphere');
+                const randomX = (Math.random() - 0.5) * 0.1;
+                const randomZ = (Math.random() - 0.5) * 0.1;
+                const randomY = Math.random() * 0.15;
+                
+                particle.setAttribute('position', `${position.x + randomX} ${position.y + 0.05 + randomY} ${position.z + randomZ}`);
+                particle.setAttribute('radius', effect.size);
+                particle.setAttribute('color', effect.color);
+                particle.setAttribute('material', 'opacity: 0.8');
+                
+                particle.setAttribute('animation', {
+                    property: 'position',
+                    to: `${position.x + randomX} ${position.y + 0.2 + randomY} ${position.z + randomZ}`,
+                    dur: 500,
+                    easing: 'easeOutQuad'
+                });
+                
+                particle.setAttribute('animation__fade', {
+                    property: 'material.opacity',
+                    from: 0.8,
+                    to: 0,
+                    dur: 500,
+                    easing: 'easeOutQuad'
+                });
+                
+                document.getElementById('dungeon').appendChild(particle);
+                
+                setTimeout(() => particle.remove(), 600);
+            }
+        }
+
+        // Create a pizza slice game piece
+        function createPizzaSlice(coord, tilePosition) {
+            const piece = document.createElement('a-entity');
+            piece.setAttribute('position', `${tilePosition.x} ${tilePosition.y + 0.08} ${tilePosition.z}`);
+            piece.setAttribute('class', 'game-piece pizza-slice');
+            
+            // Pizza slice (cone shape)
+            const slice = document.createElement('a-cone');
+            slice.setAttribute('radius-bottom', '0.04');
+            slice.setAttribute('radius-top', '0.001');
+            slice.setAttribute('height', '0.08');
+            slice.setAttribute('color', '#FFD700');
+            slice.setAttribute('rotation', '0 0 90');
+            
+            // Cheese texture
+            slice.setAttribute('material', 'color: #FFD700; roughness: 0.8');
+            
+            piece.appendChild(slice);
+            piece.pieceData = { type: 'pizza', coord: coord, tile: null };
+            gamePieces.push(piece);
+            
+            return piece;
+        }
+
+        // Create an olive game piece  
+        function createOlive(coord, tilePosition, type = 'black') {
+            const piece = document.createElement('a-entity');
+            piece.setAttribute('position', `${tilePosition.x} ${tilePosition.y + 0.06} ${tilePosition.z}`);
+            piece.setAttribute('class', 'game-piece olive');
+            
+            // Olive (sphere)
+            const olive = document.createElement('a-sphere');
+            olive.setAttribute('radius', '0.025');
+            olive.setAttribute('color', type === 'black' ? '#2C1810' : '#4CAF50');
+            olive.setAttribute('material', `color: ${type === 'black' ? '#2C1810' : '#4CAF50'}; roughness: 0.6; metalness: 0.2`);
+            
+            piece.appendChild(olive);
+            piece.pieceData = { type: 'olive', subtype: type, coord: coord, tile: null };
+            gamePieces.push(piece);
+            
+            return piece;
+        }
+
+        // Drag and drop functionality
+        function enableDragDrop(piece, tile) {
+            piece.pieceData.tile = tile;
+            
+            piece.addEventListener('mousedown', function() {
+                draggedPiece = this;
+                this.setAttribute('material', 'opacity: 0.7');
+            });
+            
+            piece.addEventListener('mouseup', function() {
+                if (draggedPiece && selectedTile) {
+                    // Move piece to selected tile
+                    const newPos = selectedTile.getAttribute('position');
+                    draggedPiece.setAttribute('position', `${newPos.x} ${newPos.y + 0.08} ${newPos.z}`);
+                    draggedPiece.pieceData.tile = selectedTile;
+                    draggedPiece.pieceData.coord = selectedTile.tileData.coord;
+                    
+                    playSelectSound();
+                }
+                if (draggedPiece) {
+                    draggedPiece.setAttribute('material', 'opacity: 1');
+                }
+                draggedPiece = null;
+            });
+        }
 
         function createCoordinateLabels() {
             const SIZE = 8;
@@ -139,6 +285,12 @@
         }
 
         function handleTileInteraction(tile, data) {
+            // Play sound effect
+            playSelectSound();
+            
+            // Create particle effect
+            createParticleEffect(tile, data.terrain);
+            
             if (selectedTile) {
                 selectedTile.setAttribute('color', selectedTile.tileData.color);
                 selectedTile.removeAttribute('animation__pulse');
@@ -260,6 +412,52 @@
             console.log(`Mapa criado com ${tileCount} tiles`);
         }
 
+        // Spawn initial game pieces
+        function spawnInitialPieces() {
+            const container = document.getElementById('dungeon');
+            const tiles = document.querySelectorAll('.tile');
+            
+            if (tiles.length < 4) return;
+            
+            // Spawn 2 pizza slices
+            const tile1 = tiles[5];
+            const tile2 = tiles[15];
+            
+            if (tile1) {
+                const pos1 = tile1.getAttribute('position');
+                const pizza1 = createPizzaSlice(tile1.tileData.coord, pos1);
+                container.appendChild(pizza1);
+                enableDragDrop(pizza1, tile1);
+            }
+            
+            if (tile2) {
+                const pos2 = tile2.getAttribute('position');
+                const pizza2 = createPizzaSlice(tile2.tileData.coord, pos2);
+                container.appendChild(pizza2);
+                enableDragDrop(pizza2, tile2);
+            }
+            
+            // Spawn 2 olives
+            const tile3 = tiles[25];
+            const tile4 = tiles[35];
+            
+            if (tile3) {
+                const pos3 = tile3.getAttribute('position');
+                const olive1 = createOlive(tile3.tileData.coord, pos3, 'black');
+                container.appendChild(olive1);
+                enableDragDrop(olive1, tile3);
+            }
+            
+            if (tile4) {
+                const pos4 = tile4.getAttribute('position');
+                const olive2 = createOlive(tile4.tileData.coord, pos4, 'green');
+                container.appendChild(olive2);
+                enableDragDrop(olive2, tile4);
+            }
+            
+            console.log('Peças iniciais criadas:', gamePieces.length);
+        }
+
         // Mobile touch handling - direct raycasting
         if (isMobile) {
             let scene, camera;
@@ -290,20 +488,39 @@
                     // Raycast from camera
                     raycaster.setFromCamera(mouse, camera.object3DMap.camera);
                     
-                    // Get all tiles
+                    // Get all tiles and game pieces
                     const tiles = Array.from(document.querySelectorAll('.tile')).map(el => el.object3D);
-                    const intersects = raycaster.intersectObjects(tiles, true);
+                    const pieces = Array.from(document.querySelectorAll('.game-piece')).map(el => el.object3D);
+                    const allObjects = [...tiles, ...pieces];
+                    const intersects = raycaster.intersectObjects(allObjects, true);
                     
                     if (intersects.length > 0) {
-                        // Find the tile element
+                        // Find the element
                         let object = intersects[0].object;
                         while (object && !object.el) {
                             object = object.parent;
                         }
                         
-                        if (object && object.el && object.el.classList.contains('tile')) {
-                            const tile = object.el;
-                            handleTileInteraction(tile, tile.tileData);
+                        if (object && object.el) {
+                            if (object.el.classList.contains('tile')) {
+                                const tile = object.el;
+                                handleTileInteraction(tile, tile.tileData);
+                            } else if (object.el.classList.contains('game-piece')) {
+                                // Handle game piece touch
+                                const piece = object.el;
+                                if (!draggedPiece) {
+                                    draggedPiece = piece;
+                                    console.log('Peça selecionada:', piece.pieceData);
+                                } else if (selectedTile) {
+                                    // Move piece to selected tile
+                                    const newPos = selectedTile.getAttribute('position');
+                                    draggedPiece.setAttribute('position', `${newPos.x} ${newPos.y + 0.08} ${newPos.z}`);
+                                    draggedPiece.pieceData.tile = selectedTile;
+                                    draggedPiece.pieceData.coord = selectedTile.tileData.coord;
+                                    playSelectSound();
+                                    draggedPiece = null;
+                                }
+                            }
                         }
                     }
                 });
@@ -320,6 +537,7 @@
             setTimeout(() => {
                 createOctagonalMap();
                 createCoordinateLabels();
+                setTimeout(spawnInitialPieces, 300);
             }, 500);
         });
 
