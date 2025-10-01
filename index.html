@@ -8,6 +8,7 @@
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <style>
         body { margin: 0; overflow: hidden; }
+        
         #info {
             position: fixed;
             bottom: 20px;
@@ -22,24 +23,66 @@
             z-index: 1000;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
+        
+        /* Battleship-style coordinate labels */
+        .coord-label {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            font-family: Arial, sans-serif;
+            font-weight: bold;
+            font-size: 18px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 2px solid white;
+            z-index: 100;
+            pointer-events: none;
+        }
+        
+        .row-label {
+            left: 10px;
+        }
+        
+        .col-label {
+            top: 10px;
+        }
     </style>
 </head>
 <body>
     <div id="info">Point at Hiro marker</div>
+    
+    <!-- 2D coordinate labels like Battleship -->
+    <div class="coord-label row-label" style="top: 15%;">A</div>
+    <div class="coord-label row-label" style="top: 22%;">B</div>
+    <div class="coord-label row-label" style="top: 29%;">C</div>
+    <div class="coord-label row-label" style="top: 36%;">D</div>
+    <div class="coord-label row-label" style="top: 43%;">E</div>
+    <div class="coord-label row-label" style="top: 50%;">F</div>
+    <div class="coord-label row-label" style="top: 57%;">G</div>
+    <div class="coord-label row-label" style="top: 64%;">H</div>
+    
+    <div class="coord-label col-label" style="left: 15%;">1</div>
+    <div class="coord-label col-label" style="left: 23%;">2</div>
+    <div class="coord-label col-label" style="left: 31%;">3</div>
+    <div class="coord-label col-label" style="left: 39%;">4</div>
+    <div class="coord-label col-label" style="left: 47%;">5</div>
+    <div class="coord-label col-label" style="left: 55%;">6</div>
+    <div class="coord-label col-label" style="left: 63%;">7</div>
+    <div class="coord-label col-label" style="left: 71%;">8</div>
 
     <a-scene
         embedded
-        arjs="sourceType: webcam; debugUIEnabled: false; sourceWidth: 1280; sourceHeight: 960; displayWidth: 1280; displayHeight: 960;"
+        arjs="sourceType: webcam; debugUIEnabled: false;"
         vr-mode-ui="enabled: false"
         renderer="logarithmicDepthBuffer: true;">
         
         <a-marker preset="hiro" id="marker">
-            <a-entity id="dungeon" scale="1.2 1.2 1.2"></a-entity>
-            <!-- Add cursor for click detection -->
-            <a-entity cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .tile"></a-entity>
+            <a-entity id="dungeon" scale="2.5 2.5 2.5"></a-entity>
         </a-marker>
 
-        <a-entity camera look-controls="enabled: false" fov="60"></a-entity>
+        <a-entity camera look-controls="enabled: false">
+            <a-cursor raycaster="objects: .tile" fuse="false"></a-cursor>
+        </a-entity>
     </a-scene>
 
     <script>
@@ -61,32 +104,22 @@
             const GAP = 0.005;
             const SPACING = TILE_SIZE + GAP;
             
-            // Proper octagon shape - cut corners at 45 degree angles
             function isInOctagon(row, col) {
-                // Top-left corner
                 if (row === 0 && col === 0) return false;
                 if (row === 0 && col === 1) return false;
                 if (row === 1 && col === 0) return false;
-                
-                // Top-right corner
                 if (row === 0 && col === SIZE-1) return false;
                 if (row === 0 && col === SIZE-2) return false;
                 if (row === 1 && col === SIZE-1) return false;
-                
-                // Bottom-left corner
                 if (row === SIZE-1 && col === 0) return false;
                 if (row === SIZE-1 && col === 1) return false;
                 if (row === SIZE-2 && col === 0) return false;
-                
-                // Bottom-right corner
                 if (row === SIZE-1 && col === SIZE-1) return false;
                 if (row === SIZE-1 && col === SIZE-2) return false;
                 if (row === SIZE-2 && col === SIZE-1) return false;
-                
                 return true;
             }
             
-            // Create terrain clusters
             const terrain = [];
             for (let row = 0; row < SIZE; row++) {
                 terrain[row] = [];
@@ -96,7 +129,6 @@
                         continue;
                     }
                     
-                    // Cluster by regions
                     if (row <= 2 && col >= 3 && col <= 5) {
                         terrain[row][col] = TERRAIN.water;
                     } else if (row >= 5 && col >= 5) {
@@ -111,11 +143,9 @@
                 }
             }
             
-            // Center offset
             const offsetX = -(SIZE * SPACING) / 2 + SPACING / 2;
             const offsetZ = -(SIZE * SPACING) / 2 + SPACING / 2;
             
-            // Create tiles
             let tileCount = 0;
             for (let row = 0; row < SIZE; row++) {
                 for (let col = 0; col < SIZE; col++) {
@@ -132,7 +162,7 @@
                     tile.setAttribute('depth', TILE_SIZE);
                     tile.setAttribute('height', t.height);
                     tile.setAttribute('color', t.color);
-                    tile.setAttribute('shadow', 'receive: true; cast: true');
+                    tile.setAttribute('class', 'tile');
                     
                     tile.tileData = {
                         row: row,
@@ -143,7 +173,6 @@
                         glow: t.glow
                     };
                     
-                    // Mouse/touch handler
                     tile.addEventListener('mouseenter', function() {
                         if (this !== selectedTile) {
                             this.setAttribute('color', this.tileData.glow);
@@ -156,13 +185,13 @@
                         }
                     });
                     
-                    tile.addEventListener('click', function() {
+                    tile.addEventListener('click', function(evt) {
+                        console.log('Tile clicked:', this.tileData.coord);
                         const data = this.tileData;
-                        console.log(`Selected: ${data.coord} (${data.terrain})`);
                         
                         if (selectedTile) {
                             selectedTile.setAttribute('color', selectedTile.tileData.color);
-                            selectedTile.setAttribute('animation__pulse', 'enabled', false);
+                            selectedTile.removeAttribute('animation__pulse');
                         }
                         
                         selectedTile = this;
@@ -186,77 +215,9 @@
                 }
             }
             
-            // Add 3D coordinate labels like Battleship board - SIMPLIFIED VERSION
-            // Row labels (A-H) on left side with background
-            for (let row = 0; row < SIZE; row++) {
-                if (terrain[row][0]) {
-                    const x = -SPACING * 0.85 + offsetX;
-                    const z = row * SPACING + offsetZ;
-                    
-                    // Background plate
-                    const bg = document.createElement('a-box');
-                    bg.setAttribute('position', `${x} 0.1 ${z}`);
-                    bg.setAttribute('width', 0.12);
-                    bg.setAttribute('height', 0.12);
-                    bg.setAttribute('depth', 0.01);
-                    bg.setAttribute('color', '#000000');
-                    container.appendChild(bg);
-                    
-                    // Letter label - basic text
-                    const label = document.createElement('a-text');
-                    label.setAttribute('value', ROWS[row]);
-                    label.setAttribute('position', `${x + 0.006} 0.1 ${z}`);
-                    label.setAttribute('align', 'center');
-                    label.setAttribute('width', 0.8);
-                    label.setAttribute('height', 0.8);
-                    label.setAttribute('color', '#FFFFFF');
-                    label.setAttribute('side', 'double');
-                    container.appendChild(label);
-                }
-            }
-            
-            // Column labels (1-8) on top side with background
-            for (let col = 0; col < SIZE; col++) {
-                if (terrain[0][col]) {
-                    const x = col * SPACING + offsetX;
-                    const z = -SPACING * 0.85 + offsetZ;
-                    
-                    // Background plate
-                    const bg = document.createElement('a-box');
-                    bg.setAttribute('position', `${x} 0.1 ${z}`);
-                    bg.setAttribute('width', 0.12);
-                    bg.setAttribute('height', 0.12);
-                    bg.setAttribute('depth', 0.01);
-                    bg.setAttribute('color', '#000000');
-                    container.appendChild(bg);
-                    
-                    // Number label - basic text
-                    const label = document.createElement('a-text');
-                    label.setAttribute('value', `${col + 1}`);
-                    label.setAttribute('position', `${x} 0.1 ${z + 0.006}`);
-                    label.setAttribute('align', 'center');
-                    label.setAttribute('width', 0.8);
-                    label.setAttribute('height', 0.8);
-                    label.setAttribute('color', '#FFFFFF');
-                    label.setAttribute('side', 'double');
-                    container.appendChild(label);
-                }
-            }
-            
-            console.log(`Created octagonal dungeon with ${tileCount} tiles`);
-            document.getElementById('info').textContent = `${tileCount} tiles loaded - click to select`;
+            console.log(`Created dungeon with ${tileCount} tiles`);
         }
 
-        // Setup cursor for raycasting
-        AFRAME.registerComponent('cursor-listener', {
-            init: function() {
-                this.el.addEventListener('click', function(evt) {
-                    console.log('Cursor clicked on:', evt.target);
-                });
-            }
-        });
-
-        // Initialize
         document.querySelector('a-scene').addEventListener('loaded', function() {
             console.log('Scene loaded, creating map...');
             setTimeout(createOctagonalMap, 500);
@@ -264,12 +225,12 @@
 
         document.querySelector('#marker').addEventListener('markerFound', function() {
             console.log('Marker found');
-            document.getElementById('info').textContent = 'Dungeon loaded - click tiles';
+            document.getElementById('info').textContent = 'Tap tiles to select';
         });
 
         document.querySelector('#marker').addEventListener('markerLost', function() {
             console.log('Marker lost');
-            document.getElementById('info').textContent = 'Marker lost - point camera';
+            document.getElementById('info').textContent = 'Point at marker';
         });
     </script>
 </body>
