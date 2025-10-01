@@ -48,12 +48,12 @@
         }
         
         /* Fix video feed positioning */
-        video {
+        #arjs-video {
             width: 100% !important;
             height: 100% !important;
             top: 0 !important;
             left: 0 !important;
-            position: absolute !important;
+            position: fixed !important;
             object-fit: cover !important;
         }
         
@@ -302,12 +302,10 @@
 
         function handleTileInteraction(tile, data) {
             if (selectedTile) {
-                selectedTile.setAttribute('color', selectedTile.tileData.color);
                 selectedTile.removeAttribute('animation__pulse');
             }
             
             selectedTile = tile;
-            tile.setAttribute('color', '#FFFFFF');
             tile.setAttribute('animation__pulse', {
                 property: 'scale',
                 from: '1 1 1',
@@ -347,25 +345,116 @@
                 return true;
             }
             
+            // Procedural terrain generation with clustering
             const terrain = [];
+            const terrainTypes = Object.keys(TERRAIN);
+            
+            // Initialize empty terrain
             for (let row = 0; row < SIZE; row++) {
                 terrain[row] = [];
                 for (let col = 0; col < SIZE; col++) {
-                    if (!isInOctagon(row, col)) {
-                        terrain[row][col] = null;
-                        continue;
-                    }
+                    terrain[row][col] = null;
+                }
+            }
+            
+            // Create seed points for each terrain type (3-5 seeds per type)
+            const seeds = [];
+            terrainTypes.forEach(type => {
+                const numSeeds = 2 + Math.floor(Math.random() * 3); // 2-4 seeds
+                for (let i = 0; i < numSeeds; i++) {
+                    let row, col;
+                    let attempts = 0;
+                    do {
+                        row = Math.floor(Math.random() * SIZE);
+                        col = Math.floor(Math.random() * SIZE);
+                        attempts++;
+                    } while ((!isInOctagon(row, col) || terrain[row][col] !== null) && attempts < 50);
                     
-                    if (row <= 2 && col >= 3 && col <= 5) {
-                        terrain[row][col] = TERRAIN.water;
-                    } else if (row >= 5 && col >= 5) {
-                        terrain[row][col] = TERRAIN.mountain;
-                    } else if (col <= 2 && row >= 2 && row <= 5) {
-                        terrain[row][col] = TERRAIN.stone;
-                    } else if (row >= 5 && col <= 4) {
-                        terrain[row][col] = TERRAIN.dirt;
-                    } else {
-                        terrain[row][col] = TERRAIN.grass;
+                    if (isInOctagon(row, col) && terrain[row][col] === null) {
+                        terrain[row][col] = type;
+                        seeds.push({ row, col, type });
+                    }
+                }
+            });
+            
+            // Grow clusters from seeds using flood fill with randomness
+            function getNeighbors(row, col) {
+                const neighbors = [];
+                const directions = [
+                    [-1, 0], [1, 0], [0, -1], [0, 1], // cardinal
+                    [-1, -1], [-1, 1], [1, -1], [1, 1] // diagonal
+                ];
+                
+                directions.forEach(([dr, dc]) => {
+                    const newRow = row + dr;
+                    const newCol = col + dc;
+                    if (newRow >= 0 && newRow < SIZE && newCol >= 0 && newCol < SIZE) {
+                        if (isInOctagon(newRow, newCol)) {
+                            neighbors.push({ row: newRow, col: newCol });
+                        }
+                    }
+                });
+                
+                return neighbors;
+            }
+            
+            // Grow clusters
+            let iterations = 0;
+            const maxIterations = 100;
+            
+            while (iterations < maxIterations) {
+                let changed = false;
+                
+                for (let row = 0; row < SIZE; row++) {
+                    for (let col = 0; col < SIZE; col++) {
+                        if (!isInOctagon(row, col) || terrain[row][col] !== null) continue;
+                        
+                        const neighbors = getNeighbors(row, col);
+                        const terrainNeighbors = neighbors.filter(n => terrain[n.row][n.col] !== null);
+                        
+                        if (terrainNeighbors.length > 0) {
+                            // Pick a random neighbor's terrain with clustering bias
+                            const counts = {};
+                            terrainNeighbors.forEach(n => {
+                                const type = terrain[n.row][n.col];
+                                counts[type] = (counts[type] || 0) + 1;
+                            });
+                            
+                            // Bias towards terrain types with more neighbors (clustering)
+                            const terrainOptions = [];
+                            Object.keys(counts).forEach(type => {
+                                for (let i = 0; i < counts[type]; i++) {
+                                    terrainOptions.push(type);
+                                }
+                            });
+                            
+                            // 70% chance to grow if has neighbors
+                            if (Math.random() < 0.7) {
+                                terrain[row][col] = terrainOptions[Math.floor(Math.random() * terrainOptions.length)];
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                
+                if (!changed) break;
+                iterations++;
+            }
+            
+            // Fill any remaining empty tiles with random terrain
+            for (let row = 0; row < SIZE; row++) {
+                for (let col = 0; col < SIZE; col++) {
+                    if (isInOctagon(row, col) && terrain[row][col] === null) {
+                        terrain[row][col] = terrainTypes[Math.floor(Math.random() * terrainTypes.length)];
+                    }
+                }
+            }
+            
+            // Convert terrain type names to TERRAIN objects
+            for (let row = 0; row < SIZE; row++) {
+                for (let col = 0; col < SIZE; col++) {
+                    if (terrain[row][col] !== null && typeof terrain[row][col] === 'string') {
+                        terrain[row][col] = TERRAIN[terrain[row][col]];
                     }
                 }
             }
