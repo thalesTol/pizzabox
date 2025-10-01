@@ -12,14 +12,38 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
         
         html, body {
-            width: 100%;
+            width: 100vw;
             height: 100vh;
             overflow: hidden;
             position: fixed;
             -webkit-overflow-scrolling: touch;
+            touch-action: none;
+        }
+        
+        #arjsDebugUIContainer {
+            display: none !important;
+        }
+        
+        .a-canvas {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
+        }
+        
+        a-scene {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
         }
         
         #info {
@@ -37,6 +61,7 @@
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
             max-width: 90%;
             text-align: center;
+            pointer-events: none;
         }
         
         #controls {
@@ -44,38 +69,26 @@
             top: 20px;
             right: 20px;
             z-index: 1000;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 10px;
-            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
         
-        .btn {
-            display: block;
-            margin: 5px 0;
-            padding: 10px 20px;
-            background: #4CAF50;
+        .control-btn {
+            background: rgba(0, 0, 0, 0.9);
             color: white;
-            border: none;
-            border-radius: 5px;
+            border: 2px solid white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: Arial, sans-serif;
             font-size: 14px;
+            font-weight: bold;
             cursor: pointer;
+            touch-action: manipulation;
         }
         
-        .btn:active {
-            background: #45a049;
-        }
-        
-        .a-canvas {
-            width: 100vw !important;
-            height: 100vh !important;
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-        }
-        
-        /* Hide the cursor completely */
-        a-cursor {
-            display: none !important;
+        .control-btn:active {
+            background: rgba(255, 255, 255, 0.3);
         }
     </style>
 </head>
@@ -83,8 +96,8 @@
     <div id="info">Aponte para o marcador Hiro</div>
     
     <div id="controls">
-        <button class="btn" id="addPizza">🍕 Adicionar Pizza</button>
-        <button class="btn" id="clearPieces">🗑️ Limpar</button>
+        <button class="control-btn" id="addPizza">🍕 Adicionar Pizza</button>
+        <button class="control-btn" id="movePizza">↔️ Mover Pizza</button>
     </div>
 
     <a-scene
@@ -92,8 +105,7 @@
         arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
         vr-mode-ui="enabled: false"
         renderer="logarithmicDepthBuffer: true; precision: medium; antialias: true;"
-        device-orientation-permission-ui="enabled: false"
-        gesture-detector>
+        device-orientation-permission-ui="enabled: false">
         
         <a-marker preset="hiro" id="marker">
             <!-- Main dungeon container -->
@@ -101,62 +113,83 @@
                 <!-- Row labels (A-H) on the left side -->
                 <a-entity id="row-labels"></a-entity>
                 
-                <!-- Column labels (1-8) on top -->
+                <!-- Column labels (1-8) on the top -->
                 <a-entity id="col-labels"></a-entity>
                 
-                <!-- Pizza pieces container -->
+                <!-- Pizza pieces (characters) -->
                 <a-entity id="pizza-pieces"></a-entity>
                 
                 <!-- Game tiles will be added here -->
             </a-entity>
         </a-marker>
 
+        <!-- Camera WITHOUT cursor for mobile touch -->
         <a-entity camera look-controls="enabled: false"></a-entity>
     </a-scene>
 
     <script>
-        // Register gesture detector component for mobile touch
-        AFRAME.registerComponent('gesture-detector', {
-            schema: {
-                element: { default: '' }
-            },
-            init: function() {
-                this.targetElement = this.data.element || this.el;
-                this.internalState = {
-                    previousState: null
-                };
-                this.emitGestureEvent = this.emitGestureEvent.bind(this);
-                this.targetElement.addEventListener('touchstart', this.emitGestureEvent);
-                this.targetElement.addEventListener('touchend', this.emitGestureEvent);
-            },
-            emitGestureEvent(event) {
-                const currentState = this.internalState.previousState;
-                const gestureContinues = currentState && event.type === 'touchstart';
-                const gestureEnded = currentState && event.type === 'touchend';
-                
-                if (gestureEnded) {
-                    const clickEvent = new Event('click');
-                    this.el.emit('click', clickEvent);
-                    this.internalState.previousState = null;
-                    return;
-                }
-                
-                this.internalState.previousState = event;
-            }
-        });
-
         const TERRAIN = {
-            grass: { color: '#4CAF50', height: 0.04, glow: '#66BB6A', name: 'Queimada' },
-            stone: { color: '#757575', height: 0.06, glow: '#9E9E9E', name: 'Calabresa' },
-            water: { color: '#2196F3', height: 0.02, glow: '#42A5F5', name: 'Ovo Quebrado' },
-            dirt: { color: '#8D6E63', height: 0.05, glow: '#A1887F', name: 'Terra' },
-            mountain: { color: '#546E7A', height: 0.10, glow: '#78909C', name: 'Alcaparra' }
+            grass: { color: '#4CAF50', height: 0.04, glow: '#66BB6A', name: 'grama' },
+            stone: { color: '#757575', height: 0.06, glow: '#9E9E9E', name: 'pedra' },
+            water: { color: '#2196F3', height: 0.02, glow: '#42A5F5', name: 'água' },
+            dirt: { color: '#8D6E63', height: 0.05, glow: '#A1887F', name: 'terra' },
+            mountain: { color: '#546E7A', height: 0.10, glow: '#78909C', name: 'montanha' }
         };
 
         const ROWS = ['A','B','C','D','E','F','G','H'];
         let selectedTile = null;
+        let gameMode = 'select'; // 'select', 'addPizza', 'movePizza'
         let pizzaPieces = [];
-        let placingMode = false;
+        let allTiles = [];
+        let markerFound = false;
+
+        // Pizza piece factory
+        function createPizzaPiece(coord, type = 'ally') {
+            const SIZE = 8;
+            const TILE_SIZE = 0.12;
+            const GAP = 0.005;
+            const SPACING = TILE_SIZE + GAP;
+            const offsetX = -(SIZE * SPACING) / 2 + SPACING / 2;
+            const offsetZ = -(SIZE * SPACING) / 2 + SPACING / 2;
+            
+            // Parse coordinate (e.g., "A1" -> row 0, col 0)
+            const row = ROWS.indexOf(coord[0]);
+            const col = parseInt(coord.substring(1)) - 1;
+            
+            const x = col * SPACING + offsetX;
+            const z = row * SPACING + offsetZ;
+            
+            const piece = document.createElement('a-entity');
+            
+            // Pizza slice as cone
+            const cone = document.createElement('a-cone');
+            cone.setAttribute('position', `${x} 0.15 ${z}`);
+            cone.setAttribute('radius-bottom', '0.05');
+            cone.setAttribute('radius-top', '0.01');
+            cone.setAttribute('height', '0.1');
+            cone.setAttribute('color', type === 'ally' ? '#FF6B35' : '#4ECDC4');
+            cone.setAttribute('rotation', '0 0 0');
+            
+            // Add a small sphere on top (olive)
+            const olive = document.createElement('a-sphere');
+            olive.setAttribute('position', `${x} 0.21 ${z}`);
+            olive.setAttribute('radius', '0.02');
+            olive.setAttribute('color', type === 'ally' ? '#2C3E50' : '#E74C3C');
+            
+            piece.appendChild(cone);
+            piece.appendChild(olive);
+            
+            piece.pizzaData = {
+                coord: coord,
+                row: row,
+                col: col,
+                type: type,
+                cone: cone,
+                olive: olive
+            };
+            
+            return piece;
+        }
 
         function createCoordinateLabels() {
             const SIZE = 8;
@@ -196,47 +229,6 @@
                 label.setAttribute('side', 'double');
                 colLabelsContainer.appendChild(label);
             }
-        }
-
-        function createPizzaPiece(position, type = 'player') {
-            const piece = document.createElement('a-cylinder');
-            const colors = {
-                player: '#FF6B6B',
-                enemy: '#4ECDC4',
-                npc: '#FFE66D'
-            };
-            
-            piece.setAttribute('position', position);
-            piece.setAttribute('radius', '0.05');
-            piece.setAttribute('height', '0.08');
-            piece.setAttribute('color', colors[type] || colors.player);
-            piece.setAttribute('class', 'pizza-piece');
-            piece.pieceType = type;
-            
-            // Add glow effect
-            piece.setAttribute('animation__glow', {
-                property: 'components.material.material.emissive',
-                from: '#000000',
-                to: colors[type],
-                dir: 'alternate',
-                dur: 1000,
-                loop: true
-            });
-            
-            // Add floating animation
-            piece.setAttribute('animation__float', {
-                property: 'position',
-                from: position,
-                to: `${position.split(' ')[0]} ${parseFloat(position.split(' ')[1]) + 0.02} ${position.split(' ')[2]}`,
-                dir: 'alternate',
-                dur: 1500,
-                loop: true,
-                easing: 'easeInOutSine'
-            });
-            
-            document.getElementById('pizza-pieces').appendChild(piece);
-            pizzaPieces.push(piece);
-            return piece;
         }
 
         function createOctagonalMap() {
@@ -311,18 +303,14 @@
                         col: col,
                         coord: `${ROWS[row]}${col + 1}`,
                         terrain: Object.keys(TERRAIN).find(key => TERRAIN[key] === t),
-                        terrainName: t.name,
                         color: t.color,
                         glow: t.glow,
-                        worldPos: { x, y, z }
+                        terrainName: t.name,
+                        element: tile
                     };
                     
-                    // Mobile touch handling
-                    tile.addEventListener('click', function(evt) {
-                        handleTileClick(this);
-                    });
-                    
                     container.appendChild(tile);
+                    allTiles.push(tile);
                     tileCount++;
                 }
             }
@@ -330,79 +318,159 @@
             console.log(`Mapa criado com ${tileCount} tiles`);
         }
 
-        function handleTileClick(tile) {
-            console.log('Tile clicked:', tile.tileData.coord);
-            const data = tile.tileData;
+        // Touch-based raycasting for mobile
+        function setupTouchControls() {
+            const scene = document.querySelector('a-scene');
+            const camera = document.querySelector('[camera]');
             
-            // If in placing mode, add pizza piece
-            if (placingMode) {
-                const piecePos = `${data.worldPos.x} ${data.worldPos.y + 0.08} ${data.worldPos.z}`;
-                createPizzaPiece(piecePos, 'player');
-                document.getElementById('info').textContent = 
-                    `🍕 Peça colocada em ${data.coord}`;
-                placingMode = false;
-                return;
-            }
-            
-            // Normal selection
-            if (selectedTile) {
-                selectedTile.setAttribute('color', selectedTile.tileData.color);
-                selectedTile.removeAttribute('animation__pulse');
-            }
-            
-            selectedTile = tile;
-            tile.setAttribute('color', '#FFFFFF');
-            tile.setAttribute('animation__pulse', {
-                property: 'scale',
-                from: '1 1 1',
-                to: '1.05 1.1 1.05',
-                dir: 'alternate',
-                dur: 600,
-                loop: true,
-                easing: 'easeInOutQuad'
+            scene.addEventListener('click', function(evt) {
+                if (!markerFound) return;
+                
+                // Get click/touch position
+                const mouse = new THREE.Vector2();
+                const canvasBounds = scene.canvas.getBoundingClientRect();
+                
+                // For touch events
+                if (evt.touches && evt.touches.length > 0) {
+                    mouse.x = ((evt.touches[0].clientX - canvasBounds.left) / canvasBounds.width) * 2 - 1;
+                    mouse.y = -((evt.touches[0].clientY - canvasBounds.top) / canvasBounds.height) * 2 + 1;
+                } else {
+                    // For mouse events
+                    mouse.x = ((evt.clientX - canvasBounds.left) / canvasBounds.width) * 2 - 1;
+                    mouse.y = -((evt.clientY - canvasBounds.top) / canvasBounds.height) * 2 + 1;
+                }
+                
+                // Create raycaster
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(mouse, camera.getObject3D('camera'));
+                
+                // Check intersections with tiles
+                const tiles = allTiles.map(t => t.object3D);
+                const intersects = raycaster.intersectObjects(tiles, true);
+                
+                if (intersects.length > 0) {
+                    // Find the tile element from the intersected object
+                    const intersectedTile = allTiles.find(t => 
+                        t.object3D === intersects[0].object || 
+                        t.object3D.children.includes(intersects[0].object)
+                    );
+                    
+                    if (intersectedTile) {
+                        handleTileClick(intersectedTile);
+                    }
+                }
             });
             
-            document.getElementById('info').textContent = 
-                `${data.coord} - ${data.terrainName}`;
+            // Also handle touchstart for better mobile response
+            scene.canvas.addEventListener('touchstart', function(evt) {
+                evt.preventDefault();
+            }, { passive: false });
         }
 
-        // UI Controls
-        document.getElementById('addPizza').addEventListener('click', function() {
-            placingMode = true;
-            document.getElementById('info').textContent = '🍕 Toque em um tile para colocar peça';
+        function handleTileClick(tile) {
+            const data = tile.tileData;
+            console.log('Tile clicked:', data.coord);
+            
+            if (gameMode === 'select') {
+                // Normal selection
+                if (selectedTile) {
+                    selectedTile.setAttribute('color', selectedTile.tileData.color);
+                    selectedTile.removeAttribute('animation__pulse');
+                }
+                
+                selectedTile = tile;
+                tile.setAttribute('color', '#FFFFFF');
+                tile.setAttribute('animation__pulse', {
+                    property: 'scale',
+                    from: '1 1 1',
+                    to: '1.05 1.1 1.05',
+                    dir: 'alternate',
+                    dur: 600,
+                    loop: true,
+                    easing: 'easeInOutQuad'
+                });
+                
+                document.getElementById('info').textContent = 
+                    `${data.coord} - ${data.terrainName}`;
+                    
+            } else if (gameMode === 'addPizza') {
+                // Add pizza piece
+                const piece = createPizzaPiece(data.coord, 'ally');
+                document.getElementById('pizza-pieces').appendChild(piece);
+                pizzaPieces.push(piece);
+                
+                document.getElementById('info').textContent = 
+                    `Pizza adicionada em ${data.coord}!`;
+                gameMode = 'select';
+                
+            } else if (gameMode === 'movePizza') {
+                // Move selected pizza
+                if (pizzaPieces.length > 0) {
+                    const lastPiece = pizzaPieces[pizzaPieces.length - 1];
+                    const SIZE = 8;
+                    const TILE_SIZE = 0.12;
+                    const GAP = 0.005;
+                    const SPACING = TILE_SIZE + GAP;
+                    const offsetX = -(SIZE * SPACING) / 2 + SPACING / 2;
+                    const offsetZ = -(SIZE * SPACING) / 2 + SPACING / 2;
+                    
+                    const x = data.col * SPACING + offsetX;
+                    const z = data.row * SPACING + offsetZ;
+                    
+                    lastPiece.pizzaData.cone.setAttribute('position', `${x} 0.15 ${z}`);
+                    lastPiece.pizzaData.olive.setAttribute('position', `${x} 0.21 ${z}`);
+                    lastPiece.pizzaData.coord = data.coord;
+                    lastPiece.pizzaData.row = data.row;
+                    lastPiece.pizzaData.col = data.col;
+                    
+                    document.getElementById('info').textContent = 
+                        `Pizza movida para ${data.coord}!`;
+                    gameMode = 'select';
+                }
+            }
+        }
+
+        // Control buttons
+        document.getElementById('addPizza').addEventListener('click', function(e) {
+            e.stopPropagation();
+            gameMode = 'addPizza';
+            document.getElementById('info').textContent = 'Toque em um tile para adicionar pizza';
         });
 
-        document.getElementById('clearPieces').addEventListener('click', function() {
-            pizzaPieces.forEach(piece => piece.remove());
-            pizzaPieces = [];
-            document.getElementById('info').textContent = '🗑️ Peças removidas';
+        document.getElementById('movePizza').addEventListener('click', function(e) {
+            e.stopPropagation();
+            gameMode = 'movePizza';
+            document.getElementById('info').textContent = 'Toque em um tile para mover a pizza';
         });
 
         // Prevent zoom/scroll on mobile
+        document.addEventListener('gesturestart', function(e) {
+            e.preventDefault();
+        });
+        
         document.addEventListener('touchmove', function(e) {
             if (e.scale !== 1) { e.preventDefault(); }
         }, { passive: false });
 
-        // Prevent context menu on long press
-        document.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-        });
-
+        // Initialize
         document.querySelector('a-scene').addEventListener('loaded', function() {
             console.log('Cena carregada, criando mapa...');
             setTimeout(() => {
                 createOctagonalMap();
                 createCoordinateLabels();
+                setupTouchControls();
             }, 500);
         });
 
         document.querySelector('#marker').addEventListener('markerFound', function() {
             console.log('Marcador encontrado');
+            markerFound = true;
             document.getElementById('info').textContent = 'Toque nos tiles para selecionar';
         });
 
         document.querySelector('#marker').addEventListener('markerLost', function() {
             console.log('Marcador perdido');
+            markerFound = false;
             document.getElementById('info').textContent = 'Aponte para o marcador Hiro';
         });
     </script>
