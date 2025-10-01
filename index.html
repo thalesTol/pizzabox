@@ -13,14 +13,14 @@
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.9);
             color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
+            padding: 15px 25px;
+            border-radius: 10px;
             font-family: Arial, sans-serif;
-            font-size: 14px;
+            font-size: 16px;
             z-index: 1000;
-            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
     </style>
 </head>
@@ -29,44 +29,60 @@
 
     <a-scene
         embedded
-        arjs="sourceType: webcam; debugUIEnabled: false;"
+        arjs="sourceType: webcam; debugUIEnabled: false; sourceWidth: 1280; sourceHeight: 960; displayWidth: 1280; displayHeight: 960;"
         vr-mode-ui="enabled: false"
-        renderer="logarithmicDepthBuffer: true;"
-        raycaster="objects: .tile">
+        renderer="logarithmicDepthBuffer: true;">
         
         <a-marker preset="hiro" id="marker">
-            <a-entity id="dungeon"></a-entity>
+            <a-entity id="dungeon" scale="1.2 1.2 1.2"></a-entity>
+            <!-- Add cursor for click detection -->
+            <a-entity cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .tile"></a-entity>
         </a-marker>
 
-        <a-entity camera look-controls="enabled: false"></a-entity>
+        <a-entity camera look-controls="enabled: false" fov="60"></a-entity>
     </a-scene>
 
     <script>
         const TERRAIN = {
-            grass: { color: '#4CAF50', height: 0.02 },
-            stone: { color: '#757575', height: 0.03 },
-            water: { color: '#2196F3', height: 0.01 },
-            dirt: { color: '#8D6E63', height: 0.025 },
-            mountain: { color: '#546E7A', height: 0.05 }
+            grass: { color: '#4CAF50', height: 0.04, glow: '#66BB6A' },
+            stone: { color: '#757575', height: 0.06, glow: '#9E9E9E' },
+            water: { color: '#2196F3', height: 0.02, glow: '#42A5F5' },
+            dirt: { color: '#8D6E63', height: 0.05, glow: '#A1887F' },
+            mountain: { color: '#546E7A', height: 0.10, glow: '#78909C' }
         };
 
-        const COLS = ['A','B','C','D','E','F','G','H'];
+        const ROWS = ['A','B','C','D','E','F','G','H'];
         let selectedTile = null;
 
         function createOctagonalMap() {
             const container = document.getElementById('dungeon');
             const SIZE = 8;
-            const TILE_SIZE = 0.08;
-            const GAP = 0.002;
+            const TILE_SIZE = 0.12;
+            const GAP = 0.005;
             const SPACING = TILE_SIZE + GAP;
             
-            // Define octagonal shape (which tiles are visible)
+            // Proper octagon shape - cut corners at 45 degree angles
             function isInOctagon(row, col) {
-                const corners = 2; // cut corners by 2 tiles
-                if (row < corners && col < corners) return false;
-                if (row < corners && col >= SIZE - corners) return false;
-                if (row >= SIZE - corners && col < corners) return false;
-                if (row >= SIZE - corners && col >= SIZE - corners) return false;
+                // Top-left corner
+                if (row === 0 && col === 0) return false;
+                if (row === 0 && col === 1) return false;
+                if (row === 1 && col === 0) return false;
+                
+                // Top-right corner
+                if (row === 0 && col === SIZE-1) return false;
+                if (row === 0 && col === SIZE-2) return false;
+                if (row === 1 && col === SIZE-1) return false;
+                
+                // Bottom-left corner
+                if (row === SIZE-1 && col === 0) return false;
+                if (row === SIZE-1 && col === 1) return false;
+                if (row === SIZE-2 && col === 0) return false;
+                
+                // Bottom-right corner
+                if (row === SIZE-1 && col === SIZE-1) return false;
+                if (row === SIZE-1 && col === SIZE-2) return false;
+                if (row === SIZE-2 && col === SIZE-1) return false;
+                
                 return true;
             }
             
@@ -80,12 +96,12 @@
                         continue;
                     }
                     
-                    // Cluster logic
+                    // Cluster by regions
                     if (row <= 2 && col >= 3 && col <= 5) {
                         terrain[row][col] = TERRAIN.water;
                     } else if (row >= 5 && col >= 5) {
                         terrain[row][col] = TERRAIN.mountain;
-                    } else if (col <= 2) {
+                    } else if (col <= 2 && row >= 2 && row <= 5) {
                         terrain[row][col] = TERRAIN.stone;
                     } else if (row >= 5 && col <= 4) {
                         terrain[row][col] = TERRAIN.dirt;
@@ -116,119 +132,144 @@
                     tile.setAttribute('depth', TILE_SIZE);
                     tile.setAttribute('height', t.height);
                     tile.setAttribute('color', t.color);
-                    tile.setAttribute('class', 'tile');
+                    tile.setAttribute('shadow', 'receive: true; cast: true');
                     
                     tile.tileData = {
                         row: row,
                         col: col,
-                        coord: `${COLS[row]}${col + 1}`,
+                        coord: `${ROWS[row]}${col + 1}`,
                         terrain: Object.keys(TERRAIN).find(key => TERRAIN[key] === t),
-                        color: t.color
+                        color: t.color,
+                        glow: t.glow
                     };
                     
-                    // Click/touch handler
-                    tile.addEventListener('click', function(evt) {
-                        evt.stopPropagation();
+                    // Mouse/touch handler
+                    tile.addEventListener('mouseenter', function() {
+                        if (this !== selectedTile) {
+                            this.setAttribute('color', this.tileData.glow);
+                        }
+                    });
+                    
+                    tile.addEventListener('mouseleave', function() {
+                        if (this !== selectedTile) {
+                            this.setAttribute('color', this.tileData.color);
+                        }
+                    });
+                    
+                    tile.addEventListener('click', function() {
                         const data = this.tileData;
-                        console.log(`Selected: ${data.coord} - ${data.terrain}`);
+                        console.log(`Selected: ${data.coord} (${data.terrain})`);
                         
-                        // Deselect previous
                         if (selectedTile) {
                             selectedTile.setAttribute('color', selectedTile.tileData.color);
+                            selectedTile.setAttribute('animation__pulse', 'enabled', false);
                         }
                         
-                        // Select new
                         selectedTile = this;
                         this.setAttribute('color', '#FFFFFF');
+                        this.setAttribute('animation__pulse', {
+                            property: 'scale',
+                            from: '1 1 1',
+                            to: '1.05 1.1 1.05',
+                            dir: 'alternate',
+                            dur: 600,
+                            loop: true,
+                            easing: 'easeInOutQuad'
+                        });
                         
                         document.getElementById('info').textContent = 
                             `${data.coord} - ${data.terrain}`;
                     });
-                    
-                    // Add coordinate label on edges
-                    if (row === 0 || row === SIZE-1 || col === 0 || col === SIZE-1) {
-                        const label = document.createElement('a-text');
-                        label.setAttribute('value', `${COLS[row]}${col + 1}`);
-                        label.setAttribute('position', `0 ${t.height + 0.01} 0`);
-                        label.setAttribute('rotation', '-90 0 0');
-                        label.setAttribute('align', 'center');
-                        label.setAttribute('width', 0.3);
-                        label.setAttribute('color', '#FFFFFF');
-                        tile.appendChild(label);
-                    }
                     
                     container.appendChild(tile);
                     tileCount++;
                 }
             }
             
-            console.log(`Created octagonal map with ${tileCount} tiles`);
-        }
-
-        // Touch interaction for mobile
-        document.addEventListener('touchstart', function(evt) {
-            if (evt.touches.length === 0) return;
-            
-            const touch = evt.touches[0];
-            const scene = document.querySelector('a-scene');
-            const camera = scene.camera;
-            
-            const mouse = new THREE.Vector2();
-            mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
-            
-            const raycaster = new THREE.Raycaster();
-            raycaster.setFromCamera(mouse, camera);
-            
-            const tiles = Array.from(document.querySelectorAll('.tile')).map(el => el.object3D);
-            const intersects = raycaster.intersectObjects(tiles, true);
-            
-            if (intersects.length > 0) {
-                const obj = intersects[0].object;
-                let el = obj;
-                while (el && !el.el) el = el.parent;
-                if (el && el.el && el.el.classList.contains('tile')) {
-                    el.el.emit('click');
+            // Add 3D coordinate labels like Battleship board - SIMPLIFIED VERSION
+            // Row labels (A-H) on left side with background
+            for (let row = 0; row < SIZE; row++) {
+                if (terrain[row][0]) {
+                    const x = -SPACING * 0.85 + offsetX;
+                    const z = row * SPACING + offsetZ;
+                    
+                    // Background plate
+                    const bg = document.createElement('a-box');
+                    bg.setAttribute('position', `${x} 0.1 ${z}`);
+                    bg.setAttribute('width', 0.12);
+                    bg.setAttribute('height', 0.12);
+                    bg.setAttribute('depth', 0.01);
+                    bg.setAttribute('color', '#000000');
+                    container.appendChild(bg);
+                    
+                    // Letter label - basic text
+                    const label = document.createElement('a-text');
+                    label.setAttribute('value', ROWS[row]);
+                    label.setAttribute('position', `${x + 0.006} 0.1 ${z}`);
+                    label.setAttribute('align', 'center');
+                    label.setAttribute('width', 0.8);
+                    label.setAttribute('height', 0.8);
+                    label.setAttribute('color', '#FFFFFF');
+                    label.setAttribute('side', 'double');
+                    container.appendChild(label);
                 }
             }
-        });
-
-        // Mouse interaction for desktop
-        document.addEventListener('click', function(evt) {
-            const scene = document.querySelector('a-scene');
-            const camera = scene.camera;
             
-            const mouse = new THREE.Vector2();
-            mouse.x = (evt.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(evt.clientY / window.innerHeight) * 2 + 1;
-            
-            const raycaster = new THREE.Raycaster();
-            raycaster.setFromCamera(mouse, camera);
-            
-            const tiles = Array.from(document.querySelectorAll('.tile')).map(el => el.object3D);
-            const intersects = raycaster.intersectObjects(tiles, true);
-            
-            if (intersects.length > 0) {
-                const obj = intersects[0].object;
-                let el = obj;
-                while (el && !el.el) el = el.parent;
-                if (el && el.el && el.el.classList.contains('tile')) {
-                    el.el.emit('click');
+            // Column labels (1-8) on top side with background
+            for (let col = 0; col < SIZE; col++) {
+                if (terrain[0][col]) {
+                    const x = col * SPACING + offsetX;
+                    const z = -SPACING * 0.85 + offsetZ;
+                    
+                    // Background plate
+                    const bg = document.createElement('a-box');
+                    bg.setAttribute('position', `${x} 0.1 ${z}`);
+                    bg.setAttribute('width', 0.12);
+                    bg.setAttribute('height', 0.12);
+                    bg.setAttribute('depth', 0.01);
+                    bg.setAttribute('color', '#000000');
+                    container.appendChild(bg);
+                    
+                    // Number label - basic text
+                    const label = document.createElement('a-text');
+                    label.setAttribute('value', `${col + 1}`);
+                    label.setAttribute('position', `${x} 0.1 ${z + 0.006}`);
+                    label.setAttribute('align', 'center');
+                    label.setAttribute('width', 0.8);
+                    label.setAttribute('height', 0.8);
+                    label.setAttribute('color', '#FFFFFF');
+                    label.setAttribute('side', 'double');
+                    container.appendChild(label);
                 }
+            }
+            
+            console.log(`Created octagonal dungeon with ${tileCount} tiles`);
+            document.getElementById('info').textContent = `${tileCount} tiles loaded - click to select`;
+        }
+
+        // Setup cursor for raycasting
+        AFRAME.registerComponent('cursor-listener', {
+            init: function() {
+                this.el.addEventListener('click', function(evt) {
+                    console.log('Cursor clicked on:', evt.target);
+                });
             }
         });
 
         // Initialize
         document.querySelector('a-scene').addEventListener('loaded', function() {
+            console.log('Scene loaded, creating map...');
             setTimeout(createOctagonalMap, 500);
         });
 
         document.querySelector('#marker').addEventListener('markerFound', function() {
-            document.getElementById('info').textContent = 'Dungeon loaded - tap tiles';
+            console.log('Marker found');
+            document.getElementById('info').textContent = 'Dungeon loaded - click tiles';
         });
 
         document.querySelector('#marker').addEventListener('markerLost', function() {
-            document.getElementById('info').textContent = 'Marker lost';
+            console.log('Marker lost');
+            document.getElementById('info').textContent = 'Marker lost - point camera';
         });
     </script>
 </body>
