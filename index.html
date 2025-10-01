@@ -12,38 +12,14 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
         }
         
         html, body {
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
             overflow: hidden;
             position: fixed;
             -webkit-overflow-scrolling: touch;
-            touch-action: none;
-        }
-        
-        #arjsDebugUIContainer {
-            display: none !important;
-        }
-        
-        .a-canvas {
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            max-width: 100% !important;
-            max-height: 100% !important;
-        }
-        
-        a-scene {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
         }
         
         #info {
@@ -61,51 +37,34 @@
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
             max-width: 90%;
             text-align: center;
-            pointer-events: none;
         }
         
-        #controls {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
+        .a-canvas {
+            width: 100% !important;
+            height: 100% !important;
+            top: 0 !important;
+            left: 0 !important;
+            position: absolute !important;
         }
         
-        .control-btn {
-            background: rgba(0, 0, 0, 0.9);
-            color: white;
-            border: 2px solid white;
-            padding: 12px 20px;
-            border-radius: 8px;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            font-weight: bold;
-            cursor: pointer;
-            touch-action: manipulation;
-        }
-        
-        .control-btn:active {
-            background: rgba(255, 255, 255, 0.3);
+        /* Hide cursor on mobile devices */
+        @media (hover: none) and (pointer: coarse) {
+            a-cursor {
+                display: none !important;
+            }
         }
     </style>
 </head>
 <body>
     <div id="info">Aponte para o marcador Hiro</div>
-    
-    <div id="controls">
-        <button class="control-btn" id="addPizza">🍕 Adicionar Pizza</button>
-        <button class="control-btn" id="movePizza">↔️ Mover Pizza</button>
-    </div>
 
     <a-scene
         embedded
         arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
         vr-mode-ui="enabled: false"
         renderer="logarithmicDepthBuffer: true; precision: medium; antialias: true;"
-        device-orientation-permission-ui="enabled: false">
+        device-orientation-permission-ui="enabled: false"
+        style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;">
         
         <a-marker preset="hiro" id="marker">
             <!-- Main dungeon container -->
@@ -113,83 +72,31 @@
                 <!-- Row labels (A-H) on the left side -->
                 <a-entity id="row-labels"></a-entity>
                 
-                <!-- Column labels (1-8) on the top -->
+                <!-- Column labels (1-8) on top -->
                 <a-entity id="col-labels"></a-entity>
-                
-                <!-- Pizza pieces (characters) -->
-                <a-entity id="pizza-pieces"></a-entity>
                 
                 <!-- Game tiles will be added here -->
             </a-entity>
         </a-marker>
 
-        <!-- Camera WITHOUT cursor for mobile touch -->
-        <a-entity camera look-controls="enabled: false"></a-entity>
+        <a-entity camera look-controls="enabled: false">
+            <!-- Cursor for desktop - hidden on mobile via CSS -->
+            <a-cursor raycaster="objects: .tile" fuse="false"></a-cursor>
+        </a-entity>
     </a-scene>
 
     <script>
         const TERRAIN = {
-            grass: { color: '#4CAF50', height: 0.04, glow: '#66BB6A', name: 'grama' },
-            stone: { color: '#757575', height: 0.06, glow: '#9E9E9E', name: 'pedra' },
-            water: { color: '#2196F3', height: 0.02, glow: '#42A5F5', name: 'água' },
-            dirt: { color: '#8D6E63', height: 0.05, glow: '#A1887F', name: 'terra' },
-            mountain: { color: '#546E7A', height: 0.10, glow: '#78909C', name: 'montanha' }
+            grass: { color: '#4CAF50', height: 0.04, glow: '#66BB6A' },
+            stone: { color: '#757575', height: 0.06, glow: '#9E9E9E' },
+            water: { color: '#2196F3', height: 0.02, glow: '#42A5F5' },
+            dirt: { color: '#8D6E63', height: 0.05, glow: '#A1887F' },
+            mountain: { color: '#546E7A', height: 0.10, glow: '#78909C' }
         };
 
         const ROWS = ['A','B','C','D','E','F','G','H'];
         let selectedTile = null;
-        let gameMode = 'select'; // 'select', 'addPizza', 'movePizza'
-        let pizzaPieces = [];
-        let allTiles = [];
-        let markerFound = false;
-
-        // Pizza piece factory
-        function createPizzaPiece(coord, type = 'ally') {
-            const SIZE = 8;
-            const TILE_SIZE = 0.12;
-            const GAP = 0.005;
-            const SPACING = TILE_SIZE + GAP;
-            const offsetX = -(SIZE * SPACING) / 2 + SPACING / 2;
-            const offsetZ = -(SIZE * SPACING) / 2 + SPACING / 2;
-            
-            // Parse coordinate (e.g., "A1" -> row 0, col 0)
-            const row = ROWS.indexOf(coord[0]);
-            const col = parseInt(coord.substring(1)) - 1;
-            
-            const x = col * SPACING + offsetX;
-            const z = row * SPACING + offsetZ;
-            
-            const piece = document.createElement('a-entity');
-            
-            // Pizza slice as cone
-            const cone = document.createElement('a-cone');
-            cone.setAttribute('position', `${x} 0.15 ${z}`);
-            cone.setAttribute('radius-bottom', '0.05');
-            cone.setAttribute('radius-top', '0.01');
-            cone.setAttribute('height', '0.1');
-            cone.setAttribute('color', type === 'ally' ? '#FF6B35' : '#4ECDC4');
-            cone.setAttribute('rotation', '0 0 0');
-            
-            // Add a small sphere on top (olive)
-            const olive = document.createElement('a-sphere');
-            olive.setAttribute('position', `${x} 0.21 ${z}`);
-            olive.setAttribute('radius', '0.02');
-            olive.setAttribute('color', type === 'ally' ? '#2C3E50' : '#E74C3C');
-            
-            piece.appendChild(cone);
-            piece.appendChild(olive);
-            
-            piece.pizzaData = {
-                coord: coord,
-                row: row,
-                col: col,
-                type: type,
-                cone: cone,
-                olive: olive
-            };
-            
-            return piece;
-        }
+        let isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
         function createCoordinateLabels() {
             const SIZE = 8;
@@ -229,6 +136,27 @@
                 label.setAttribute('side', 'double');
                 colLabelsContainer.appendChild(label);
             }
+        }
+
+        function handleTileInteraction(tile, data) {
+            if (selectedTile) {
+                selectedTile.setAttribute('color', selectedTile.tileData.color);
+                selectedTile.removeAttribute('animation__pulse');
+            }
+            
+            selectedTile = tile;
+            tile.setAttribute('color', '#FFFFFF');
+            tile.setAttribute('animation__pulse', {
+                property: 'scale',
+                from: '1 1 1',
+                to: '1.05 1.1 1.05',
+                dir: 'alternate',
+                dur: 600,
+                loop: true,
+                easing: 'easeInOutQuad'
+            });
+            
+            document.getElementById('info').textContent = `${data.coord} - ${data.terrain}`;
         }
 
         function createOctagonalMap() {
@@ -304,13 +232,27 @@
                         coord: `${ROWS[row]}${col + 1}`,
                         terrain: Object.keys(TERRAIN).find(key => TERRAIN[key] === t),
                         color: t.color,
-                        glow: t.glow,
-                        terrainName: t.name,
-                        element: tile
+                        glow: t.glow
                     };
                     
+                    tile.addEventListener('mouseenter', function() {
+                        if (this !== selectedTile) {
+                            this.setAttribute('color', this.tileData.glow);
+                        }
+                    });
+                    
+                    tile.addEventListener('mouseleave', function() {
+                        if (this !== selectedTile) {
+                            this.setAttribute('color', this.tileData.color);
+                        }
+                    });
+                    
+                    tile.addEventListener('click', function(evt) {
+                        console.log('Tile clicked:', this.tileData.coord);
+                        handleTileInteraction(this, this.tileData);
+                    });
+                    
                     container.appendChild(tile);
-                    allTiles.push(tile);
                     tileCount++;
                 }
             }
@@ -318,159 +260,76 @@
             console.log(`Mapa criado com ${tileCount} tiles`);
         }
 
-        // Touch-based raycasting for mobile
-        function setupTouchControls() {
-            const scene = document.querySelector('a-scene');
-            const camera = document.querySelector('[camera]');
+        // Mobile touch handling - direct raycasting
+        if (isMobile) {
+            let scene, camera;
             
-            scene.addEventListener('click', function(evt) {
-                if (!markerFound) return;
+            window.addEventListener('load', () => {
+                scene = document.querySelector('a-scene');
+                camera = document.querySelector('[camera]');
                 
-                // Get click/touch position
-                const mouse = new THREE.Vector2();
-                const canvasBounds = scene.canvas.getBoundingClientRect();
-                
-                // For touch events
-                if (evt.touches && evt.touches.length > 0) {
-                    mouse.x = ((evt.touches[0].clientX - canvasBounds.left) / canvasBounds.width) * 2 - 1;
-                    mouse.y = -((evt.touches[0].clientY - canvasBounds.top) / canvasBounds.height) * 2 + 1;
-                } else {
-                    // For mouse events
-                    mouse.x = ((evt.clientX - canvasBounds.left) / canvasBounds.width) * 2 - 1;
-                    mouse.y = -((evt.clientY - canvasBounds.top) / canvasBounds.height) * 2 + 1;
-                }
-                
-                // Create raycaster
-                const raycaster = new THREE.Raycaster();
-                raycaster.setFromCamera(mouse, camera.getObject3D('camera'));
-                
-                // Check intersections with tiles
-                const tiles = allTiles.map(t => t.object3D);
-                const intersects = raycaster.intersectObjects(tiles, true);
-                
-                if (intersects.length > 0) {
-                    // Find the tile element from the intersected object
-                    const intersectedTile = allTiles.find(t => 
-                        t.object3D === intersects[0].object || 
-                        t.object3D.children.includes(intersects[0].object)
-                    );
+                scene.addEventListener('click', function(evt) {
+                    // Only process if marker is found
+                    const marker = document.querySelector('#marker');
+                    if (!marker.object3D.visible) return;
                     
-                    if (intersectedTile) {
-                        handleTileClick(intersectedTile);
+                    // Get touch/click coordinates
+                    const mouse = new THREE.Vector2();
+                    const raycaster = new THREE.Raycaster();
+                    
+                    // Convert screen coordinates to normalized device coordinates
+                    const canvas = scene.canvas;
+                    const rect = canvas.getBoundingClientRect();
+                    
+                    const x = evt.clientX !== undefined ? evt.clientX : (evt.touches ? evt.touches[0].clientX : 0);
+                    const y = evt.clientY !== undefined ? evt.clientY : (evt.touches ? evt.touches[0].clientY : 0);
+                    
+                    mouse.x = ((x - rect.left) / rect.width) * 2 - 1;
+                    mouse.y = -((y - rect.top) / rect.height) * 2 + 1;
+                    
+                    // Raycast from camera
+                    raycaster.setFromCamera(mouse, camera.object3DMap.camera);
+                    
+                    // Get all tiles
+                    const tiles = Array.from(document.querySelectorAll('.tile')).map(el => el.object3D);
+                    const intersects = raycaster.intersectObjects(tiles, true);
+                    
+                    if (intersects.length > 0) {
+                        // Find the tile element
+                        let object = intersects[0].object;
+                        while (object && !object.el) {
+                            object = object.parent;
+                        }
+                        
+                        if (object && object.el && object.el.classList.contains('tile')) {
+                            const tile = object.el;
+                            handleTileInteraction(tile, tile.tileData);
+                        }
                     }
-                }
-            });
-            
-            // Also handle touchstart for better mobile response
-            scene.canvas.addEventListener('touchstart', function(evt) {
-                evt.preventDefault();
-            }, { passive: false });
-        }
-
-        function handleTileClick(tile) {
-            const data = tile.tileData;
-            console.log('Tile clicked:', data.coord);
-            
-            if (gameMode === 'select') {
-                // Normal selection
-                if (selectedTile) {
-                    selectedTile.setAttribute('color', selectedTile.tileData.color);
-                    selectedTile.removeAttribute('animation__pulse');
-                }
-                
-                selectedTile = tile;
-                tile.setAttribute('color', '#FFFFFF');
-                tile.setAttribute('animation__pulse', {
-                    property: 'scale',
-                    from: '1 1 1',
-                    to: '1.05 1.1 1.05',
-                    dir: 'alternate',
-                    dur: 600,
-                    loop: true,
-                    easing: 'easeInOutQuad'
                 });
-                
-                document.getElementById('info').textContent = 
-                    `${data.coord} - ${data.terrainName}`;
-                    
-            } else if (gameMode === 'addPizza') {
-                // Add pizza piece
-                const piece = createPizzaPiece(data.coord, 'ally');
-                document.getElementById('pizza-pieces').appendChild(piece);
-                pizzaPieces.push(piece);
-                
-                document.getElementById('info').textContent = 
-                    `Pizza adicionada em ${data.coord}!`;
-                gameMode = 'select';
-                
-            } else if (gameMode === 'movePizza') {
-                // Move selected pizza
-                if (pizzaPieces.length > 0) {
-                    const lastPiece = pizzaPieces[pizzaPieces.length - 1];
-                    const SIZE = 8;
-                    const TILE_SIZE = 0.12;
-                    const GAP = 0.005;
-                    const SPACING = TILE_SIZE + GAP;
-                    const offsetX = -(SIZE * SPACING) / 2 + SPACING / 2;
-                    const offsetZ = -(SIZE * SPACING) / 2 + SPACING / 2;
-                    
-                    const x = data.col * SPACING + offsetX;
-                    const z = data.row * SPACING + offsetZ;
-                    
-                    lastPiece.pizzaData.cone.setAttribute('position', `${x} 0.15 ${z}`);
-                    lastPiece.pizzaData.olive.setAttribute('position', `${x} 0.21 ${z}`);
-                    lastPiece.pizzaData.coord = data.coord;
-                    lastPiece.pizzaData.row = data.row;
-                    lastPiece.pizzaData.col = data.col;
-                    
-                    document.getElementById('info').textContent = 
-                        `Pizza movida para ${data.coord}!`;
-                    gameMode = 'select';
-                }
-            }
+            });
         }
-
-        // Control buttons
-        document.getElementById('addPizza').addEventListener('click', function(e) {
-            e.stopPropagation();
-            gameMode = 'addPizza';
-            document.getElementById('info').textContent = 'Toque em um tile para adicionar pizza';
-        });
-
-        document.getElementById('movePizza').addEventListener('click', function(e) {
-            e.stopPropagation();
-            gameMode = 'movePizza';
-            document.getElementById('info').textContent = 'Toque em um tile para mover a pizza';
-        });
 
         // Prevent zoom/scroll on mobile
-        document.addEventListener('gesturestart', function(e) {
-            e.preventDefault();
-        });
-        
         document.addEventListener('touchmove', function(e) {
             if (e.scale !== 1) { e.preventDefault(); }
         }, { passive: false });
 
-        // Initialize
         document.querySelector('a-scene').addEventListener('loaded', function() {
             console.log('Cena carregada, criando mapa...');
             setTimeout(() => {
                 createOctagonalMap();
                 createCoordinateLabels();
-                setupTouchControls();
             }, 500);
         });
 
         document.querySelector('#marker').addEventListener('markerFound', function() {
             console.log('Marcador encontrado');
-            markerFound = true;
             document.getElementById('info').textContent = 'Toque nos tiles para selecionar';
         });
 
         document.querySelector('#marker').addEventListener('markerLost', function() {
             console.log('Marcador perdido');
-            markerFound = false;
             document.getElementById('info').textContent = 'Aponte para o marcador Hiro';
         });
     </script>
