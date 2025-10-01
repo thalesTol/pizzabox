@@ -16,7 +16,7 @@
         
         html, body {
             width: 100%;
-            height: 100%;
+            height: 100vh;
             overflow: hidden;
             position: fixed;
             -webkit-overflow-scrolling: touch;
@@ -39,21 +39,61 @@
             text-align: center;
         }
         
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+        }
+        
+        .btn {
+            display: block;
+            margin: 5px 0;
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        .btn:active {
+            background: #45a049;
+        }
+        
         .a-canvas {
-            width: 100% !important;
-            height: 100% !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+        }
+        
+        /* Hide the cursor completely */
+        a-cursor {
+            display: none !important;
         }
     </style>
 </head>
 <body>
     <div id="info">Aponte para o marcador Hiro</div>
+    
+    <div id="controls">
+        <button class="btn" id="addPizza">🍕 Adicionar Pizza</button>
+        <button class="btn" id="clearPieces">🗑️ Limpar</button>
+    </div>
 
     <a-scene
         embedded
         arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
         vr-mode-ui="enabled: false"
         renderer="logarithmicDepthBuffer: true; precision: medium; antialias: true;"
-        device-orientation-permission-ui="enabled: false">
+        device-orientation-permission-ui="enabled: false"
+        gesture-detector>
         
         <a-marker preset="hiro" id="marker">
             <!-- Main dungeon container -->
@@ -64,26 +104,59 @@
                 <!-- Column labels (1-8) on top -->
                 <a-entity id="col-labels"></a-entity>
                 
+                <!-- Pizza pieces container -->
+                <a-entity id="pizza-pieces"></a-entity>
+                
                 <!-- Game tiles will be added here -->
             </a-entity>
         </a-marker>
 
-        <a-entity camera look-controls="enabled: false" cursor="rayOrigin: mouse">
-            <a-cursor raycaster="objects: .tile" fuse="false"></a-cursor>
-        </a-entity>
+        <a-entity camera look-controls="enabled: false"></a-entity>
     </a-scene>
 
     <script>
+        // Register gesture detector component for mobile touch
+        AFRAME.registerComponent('gesture-detector', {
+            schema: {
+                element: { default: '' }
+            },
+            init: function() {
+                this.targetElement = this.data.element || this.el;
+                this.internalState = {
+                    previousState: null
+                };
+                this.emitGestureEvent = this.emitGestureEvent.bind(this);
+                this.targetElement.addEventListener('touchstart', this.emitGestureEvent);
+                this.targetElement.addEventListener('touchend', this.emitGestureEvent);
+            },
+            emitGestureEvent(event) {
+                const currentState = this.internalState.previousState;
+                const gestureContinues = currentState && event.type === 'touchstart';
+                const gestureEnded = currentState && event.type === 'touchend';
+                
+                if (gestureEnded) {
+                    const clickEvent = new Event('click');
+                    this.el.emit('click', clickEvent);
+                    this.internalState.previousState = null;
+                    return;
+                }
+                
+                this.internalState.previousState = event;
+            }
+        });
+
         const TERRAIN = {
-            grass: { color: '#4CAF50', height: 0.04, glow: '#66BB6A' },
-            stone: { color: '#757575', height: 0.06, glow: '#9E9E9E' },
-            water: { color: '#2196F3', height: 0.02, glow: '#42A5F5' },
-            dirt: { color: '#8D6E63', height: 0.05, glow: '#A1887F' },
-            mountain: { color: '#546E7A', height: 0.10, glow: '#78909C' }
+            grass: { color: '#4CAF50', height: 0.04, glow: '#66BB6A', name: 'Queimada' },
+            stone: { color: '#757575', height: 0.06, glow: '#9E9E9E', name: 'Calabresa' },
+            water: { color: '#2196F3', height: 0.02, glow: '#42A5F5', name: 'Ovo Quebrado' },
+            dirt: { color: '#8D6E63', height: 0.05, glow: '#A1887F', name: 'Terra' },
+            mountain: { color: '#546E7A', height: 0.10, glow: '#78909C', name: 'Alcaparra' }
         };
 
         const ROWS = ['A','B','C','D','E','F','G','H'];
         let selectedTile = null;
+        let pizzaPieces = [];
+        let placingMode = false;
 
         function createCoordinateLabels() {
             const SIZE = 8;
@@ -123,6 +196,47 @@
                 label.setAttribute('side', 'double');
                 colLabelsContainer.appendChild(label);
             }
+        }
+
+        function createPizzaPiece(position, type = 'player') {
+            const piece = document.createElement('a-cylinder');
+            const colors = {
+                player: '#FF6B6B',
+                enemy: '#4ECDC4',
+                npc: '#FFE66D'
+            };
+            
+            piece.setAttribute('position', position);
+            piece.setAttribute('radius', '0.05');
+            piece.setAttribute('height', '0.08');
+            piece.setAttribute('color', colors[type] || colors.player);
+            piece.setAttribute('class', 'pizza-piece');
+            piece.pieceType = type;
+            
+            // Add glow effect
+            piece.setAttribute('animation__glow', {
+                property: 'components.material.material.emissive',
+                from: '#000000',
+                to: colors[type],
+                dir: 'alternate',
+                dur: 1000,
+                loop: true
+            });
+            
+            // Add floating animation
+            piece.setAttribute('animation__float', {
+                property: 'position',
+                from: position,
+                to: `${position.split(' ')[0]} ${parseFloat(position.split(' ')[1]) + 0.02} ${position.split(' ')[2]}`,
+                dir: 'alternate',
+                dur: 1500,
+                loop: true,
+                easing: 'easeInOutSine'
+            });
+            
+            document.getElementById('pizza-pieces').appendChild(piece);
+            pizzaPieces.push(piece);
+            return piece;
         }
 
         function createOctagonalMap() {
@@ -197,45 +311,15 @@
                         col: col,
                         coord: `${ROWS[row]}${col + 1}`,
                         terrain: Object.keys(TERRAIN).find(key => TERRAIN[key] === t),
+                        terrainName: t.name,
                         color: t.color,
-                        glow: t.glow
+                        glow: t.glow,
+                        worldPos: { x, y, z }
                     };
                     
-                    tile.addEventListener('mouseenter', function() {
-                        if (this !== selectedTile) {
-                            this.setAttribute('color', this.tileData.glow);
-                        }
-                    });
-                    
-                    tile.addEventListener('mouseleave', function() {
-                        if (this !== selectedTile) {
-                            this.setAttribute('color', this.tileData.color);
-                        }
-                    });
-                    
+                    // Mobile touch handling
                     tile.addEventListener('click', function(evt) {
-                        console.log('Tile clicked:', this.tileData.coord);
-                        const data = this.tileData;
-                        
-                        if (selectedTile) {
-                            selectedTile.setAttribute('color', selectedTile.tileData.color);
-                            selectedTile.removeAttribute('animation__pulse');
-                        }
-                        
-                        selectedTile = this;
-                        this.setAttribute('color', '#FFFFFF');
-                        this.setAttribute('animation__pulse', {
-                            property: 'scale',
-                            from: '1 1 1',
-                            to: '1.05 1.1 1.05',
-                            dir: 'alternate',
-                            dur: 600,
-                            loop: true,
-                            easing: 'easeInOutQuad'
-                        });
-                        
-                        document.getElementById('info').textContent = 
-                            `${data.coord} - ${data.terrain}`;
+                        handleTileClick(this);
                     });
                     
                     container.appendChild(tile);
@@ -246,10 +330,63 @@
             console.log(`Mapa criado com ${tileCount} tiles`);
         }
 
+        function handleTileClick(tile) {
+            console.log('Tile clicked:', tile.tileData.coord);
+            const data = tile.tileData;
+            
+            // If in placing mode, add pizza piece
+            if (placingMode) {
+                const piecePos = `${data.worldPos.x} ${data.worldPos.y + 0.08} ${data.worldPos.z}`;
+                createPizzaPiece(piecePos, 'player');
+                document.getElementById('info').textContent = 
+                    `🍕 Peça colocada em ${data.coord}`;
+                placingMode = false;
+                return;
+            }
+            
+            // Normal selection
+            if (selectedTile) {
+                selectedTile.setAttribute('color', selectedTile.tileData.color);
+                selectedTile.removeAttribute('animation__pulse');
+            }
+            
+            selectedTile = tile;
+            tile.setAttribute('color', '#FFFFFF');
+            tile.setAttribute('animation__pulse', {
+                property: 'scale',
+                from: '1 1 1',
+                to: '1.05 1.1 1.05',
+                dir: 'alternate',
+                dur: 600,
+                loop: true,
+                easing: 'easeInOutQuad'
+            });
+            
+            document.getElementById('info').textContent = 
+                `${data.coord} - ${data.terrainName}`;
+        }
+
+        // UI Controls
+        document.getElementById('addPizza').addEventListener('click', function() {
+            placingMode = true;
+            document.getElementById('info').textContent = '🍕 Toque em um tile para colocar peça';
+        });
+
+        document.getElementById('clearPieces').addEventListener('click', function() {
+            pizzaPieces.forEach(piece => piece.remove());
+            pizzaPieces = [];
+            document.getElementById('info').textContent = '🗑️ Peças removidas';
+        });
+
         // Prevent zoom/scroll on mobile
         document.addEventListener('touchmove', function(e) {
             if (e.scale !== 1) { e.preventDefault(); }
         }, { passive: false });
+
+        // Prevent context menu on long press
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
 
         document.querySelector('a-scene').addEventListener('loaded', function() {
             console.log('Cena carregada, criando mapa...');
