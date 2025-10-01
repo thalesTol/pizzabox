@@ -2,12 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AR Dungeon Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>AR Dungeon Pizza Map</title>
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: fixed;
+            -webkit-overflow-scrolling: touch;
+        }
         
         #info {
             position: fixed;
@@ -22,65 +35,40 @@
             font-size: 16px;
             z-index: 1000;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            max-width: 90%;
+            text-align: center;
         }
         
-        /* Battleship-style coordinate labels */
-        .coord-label {
-            position: fixed;
-            background: rgba(0, 0, 0, 0.9);
-            color: white;
-            font-family: Arial, sans-serif;
-            font-weight: bold;
-            font-size: 18px;
-            padding: 8px 12px;
-            border-radius: 4px;
-            border: 2px solid white;
-            z-index: 100;
-            pointer-events: none;
-        }
-        
-        .row-label {
-            left: 10px;
-        }
-        
-        .col-label {
-            top: 10px;
+        .a-canvas {
+            width: 100% !important;
+            height: 100% !important;
         }
     </style>
 </head>
 <body>
-    <div id="info">Point at Hiro marker</div>
-    
-    <!-- 2D coordinate labels like Battleship -->
-    <div class="coord-label row-label" style="top: 15%;">A</div>
-    <div class="coord-label row-label" style="top: 22%;">B</div>
-    <div class="coord-label row-label" style="top: 29%;">C</div>
-    <div class="coord-label row-label" style="top: 36%;">D</div>
-    <div class="coord-label row-label" style="top: 43%;">E</div>
-    <div class="coord-label row-label" style="top: 50%;">F</div>
-    <div class="coord-label row-label" style="top: 57%;">G</div>
-    <div class="coord-label row-label" style="top: 64%;">H</div>
-    
-    <div class="coord-label col-label" style="left: 15%;">1</div>
-    <div class="coord-label col-label" style="left: 23%;">2</div>
-    <div class="coord-label col-label" style="left: 31%;">3</div>
-    <div class="coord-label col-label" style="left: 39%;">4</div>
-    <div class="coord-label col-label" style="left: 47%;">5</div>
-    <div class="coord-label col-label" style="left: 55%;">6</div>
-    <div class="coord-label col-label" style="left: 63%;">7</div>
-    <div class="coord-label col-label" style="left: 71%;">8</div>
+    <div id="info">Aponte para o marcador Hiro</div>
 
     <a-scene
         embedded
-        arjs="sourceType: webcam; debugUIEnabled: false;"
+        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
         vr-mode-ui="enabled: false"
-        renderer="logarithmicDepthBuffer: true;">
+        renderer="logarithmicDepthBuffer: true; precision: medium; antialias: true;"
+        device-orientation-permission-ui="enabled: false">
         
         <a-marker preset="hiro" id="marker">
-            <a-entity id="dungeon" scale="2.5 2.5 2.5"></a-entity>
+            <!-- Main dungeon container -->
+            <a-entity id="dungeon" scale="2.5 2.5 2.5" position="0 0 0">
+                <!-- Row labels (A-H) on the left side -->
+                <a-entity id="row-labels"></a-entity>
+                
+                <!-- Column labels (1-8) on top -->
+                <a-entity id="col-labels"></a-entity>
+                
+                <!-- Game tiles will be added here -->
+            </a-entity>
         </a-marker>
 
-        <a-entity camera look-controls="enabled: false">
+        <a-entity camera look-controls="enabled: false" cursor="rayOrigin: mouse">
             <a-cursor raycaster="objects: .tile" fuse="false"></a-cursor>
         </a-entity>
     </a-scene>
@@ -96,6 +84,46 @@
 
         const ROWS = ['A','B','C','D','E','F','G','H'];
         let selectedTile = null;
+
+        function createCoordinateLabels() {
+            const SIZE = 8;
+            const TILE_SIZE = 0.12;
+            const GAP = 0.005;
+            const SPACING = TILE_SIZE + GAP;
+            const offsetX = -(SIZE * SPACING) / 2 + SPACING / 2;
+            const offsetZ = -(SIZE * SPACING) / 2 + SPACING / 2;
+            
+            const rowLabelsContainer = document.getElementById('row-labels');
+            const colLabelsContainer = document.getElementById('col-labels');
+            
+            // Create row labels (A-H) on the left side
+            for (let row = 0; row < SIZE; row++) {
+                const z = row * SPACING + offsetZ;
+                const label = document.createElement('a-text');
+                label.setAttribute('value', ROWS[row]);
+                label.setAttribute('position', `${offsetX - SPACING * 0.7} 0.05 ${z}`);
+                label.setAttribute('scale', '0.3 0.3 0.3');
+                label.setAttribute('color', '#FFFFFF');
+                label.setAttribute('align', 'center');
+                label.setAttribute('rotation', '-90 0 0');
+                label.setAttribute('side', 'double');
+                rowLabelsContainer.appendChild(label);
+            }
+            
+            // Create column labels (1-8) on top
+            for (let col = 0; col < SIZE; col++) {
+                const x = col * SPACING + offsetX;
+                const label = document.createElement('a-text');
+                label.setAttribute('value', String(col + 1));
+                label.setAttribute('position', `${x} 0.05 ${offsetZ - SPACING * 0.7}`);
+                label.setAttribute('scale', '0.3 0.3 0.3');
+                label.setAttribute('color', '#FFFFFF');
+                label.setAttribute('align', 'center');
+                label.setAttribute('rotation', '-90 0 0');
+                label.setAttribute('side', 'double');
+                colLabelsContainer.appendChild(label);
+            }
+        }
 
         function createOctagonalMap() {
             const container = document.getElementById('dungeon');
@@ -215,22 +243,30 @@
                 }
             }
             
-            console.log(`Created dungeon with ${tileCount} tiles`);
+            console.log(`Mapa criado com ${tileCount} tiles`);
         }
 
+        // Prevent zoom/scroll on mobile
+        document.addEventListener('touchmove', function(e) {
+            if (e.scale !== 1) { e.preventDefault(); }
+        }, { passive: false });
+
         document.querySelector('a-scene').addEventListener('loaded', function() {
-            console.log('Scene loaded, creating map...');
-            setTimeout(createOctagonalMap, 500);
+            console.log('Cena carregada, criando mapa...');
+            setTimeout(() => {
+                createOctagonalMap();
+                createCoordinateLabels();
+            }, 500);
         });
 
         document.querySelector('#marker').addEventListener('markerFound', function() {
-            console.log('Marker found');
-            document.getElementById('info').textContent = 'Tap tiles to select';
+            console.log('Marcador encontrado');
+            document.getElementById('info').textContent = 'Toque nos tiles para selecionar';
         });
 
         document.querySelector('#marker').addEventListener('markerLost', function() {
-            console.log('Marker lost');
-            document.getElementById('info').textContent = 'Point at marker';
+            console.log('Marcador perdido');
+            document.getElementById('info').textContent = 'Aponte para o marcador Hiro';
         });
     </script>
 </body>
